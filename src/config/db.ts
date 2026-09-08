@@ -5,10 +5,14 @@ dotenv.config();
 
 const { Pool } = pg;
 
+const isSslRequested =
+  process.env.DATABASE_SSL === "true" ||
+  (Boolean(process.env.DATABASE_URL) && (process.env.DATABASE_URL || "").includes("sslmode=require"));
+
 // PostgreSQL Connection Pool configuration
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgres://MeharDvr:Mehar%40dvr@187.77.187.120:5321/meh",
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  ssl: isSslRequested ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
