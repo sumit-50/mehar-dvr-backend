@@ -37,9 +37,9 @@ COPY --from=builder /app/dist ./dist
 # Expose backend API port
 EXPOSE 5000
 
-# Reliable health check using curl
+# Reliable health check supporting dynamic PORT (3000 or 5000) and both endpoints
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://127.0.0.1:5000/api/health || exit 1
+  CMD sh -c 'curl -f "http://127.0.0.1:${PORT:-5000}/api/health" || curl -f "http://127.0.0.1:3000/api/health" || curl -f "http://127.0.0.1:5000/api/health" || curl -f "http://127.0.0.1:${PORT:-5000}/health" || exit 1'
 
 # Start production server
 CMD ["node", "dist/server.js"]

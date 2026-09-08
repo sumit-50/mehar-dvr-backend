@@ -26,8 +26,8 @@ app.use(
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
-// Health check endpoint
-app.get("/api/health", (_req, res) => {
+// Health check endpoints (supports both /api/health and /health)
+app.get(["/api/health", "/health"], (_req, res) => {
   res.json({ status: "ok", service: "DVR Mehar Backend API", timestamp: new Date().toISOString() });
 });
 
