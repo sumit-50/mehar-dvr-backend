@@ -798,20 +798,20 @@ authRouter.post("/bootstrap-demo-data", async (_req: Request, res: Response) => 
   }
 });
 
-/** Update user role endpoint (admin, accountant, employee) */
+/** Update user role endpoint (admin, employee) */
 authRouter.post("/users/set-role", async (req: Request, res: Response) => {
   try {
     const { userId, employeeId, id, role } = req.body;
     const targetId = userId || id;
     const targetCode = employeeId;
-    const targetRole = (role || "employee").toLowerCase();
+    const targetRole = (role || "employee").toLowerCase() === "admin" ? "admin" : "employee";
 
     if (!targetId && !targetCode) {
       return res.status(400).json({ error: "User ID or Employee ID is required." });
     }
 
-    if (!["admin", "accountant", "employee"].includes(targetRole)) {
-      return res.status(400).json({ error: "Invalid role. Must be 'admin', 'accountant', or 'employee'." });
+    if (!["admin", "employee"].includes(targetRole)) {
+      return res.status(400).json({ error: "Invalid role. Must be 'admin' or 'employee'." });
     }
 
     const updateRes = await query(
