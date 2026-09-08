@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  # ==========================================
+  # Mehar DVR Backend REST API
+  # ==========================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mehar-dvr-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DATABASE_URL=${DATABASE_URL:-postgres://MeharDvr:Mehar%40dvr@187.77.187.120:5321/meh}
+      - JWT_SECRET=${JWT_SECRET:-mehar_dvr_jwt_super_secret_key_2026}
+      - ZECTAGON_API_KEY=${ZECTAGON_API_KEY:-}
+      - SMS_SENDER_ID=${SMS_SENDER_ID:-MEHRPL}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-no-reply@meharadvisory.com}
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_LOCATION_PLACE_INDEX=${AWS_LOCATION_PLACE_INDEX:-MeharDVRPlaceIndex}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
