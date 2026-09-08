@@ -43,22 +43,27 @@ export async function sendSignupOTP(mobile: string, otp: string | number): Promi
     });
 
     const url = `${SMS_BASE_URL}/sendsms.jsp?${params.toString()}`;
+    console.log(`[SMS Gateway Dispatch] Sending OTP to +91 ${cleanMobile} via Zectagon (${SMS_BASE_URL})...`);
 
     const response = await fetch(url, { method: "GET" });
     const text = await response.text();
+    console.log(`[SMS Gateway Response] Status: ${response.status}, Body: ${text}`);
 
+    let parsedResult: SendSMSResponse;
     try {
-      return JSON.parse(text);
+      parsedResult = JSON.parse(text);
     } catch {
       // Fallback if response format is CSV text (e.g. status,code,message,messageid)
       const parts = text.split(",");
-      return {
-        status: parts[0]?.trim(),
+      parsedResult = {
+        status: parts[0]?.trim() || "sent",
         code: parts[1]?.trim(),
-        message: parts[2]?.trim(),
+        message: parts[2]?.trim() || text,
         messageid: parts[3]?.trim(),
       };
     }
+
+    return parsedResult;
   } catch (error: any) {
     console.error("SMS Gateway Error:", error);
     return { status: "error", error: error.message };
