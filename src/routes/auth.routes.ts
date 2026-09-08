@@ -41,9 +41,9 @@ authRouter.post(["/send-otp", "/request-otp"], async (req: Request, res: Respons
 
     return res.json({
       success: true,
-      message: "OTP sent successfully",
+      message: "OTP request processed",
       phone: cleanPhone,
-      data: smsResult,
+      gateway: smsResult,
     });
   } catch (err: any) {
     console.error("Send OTP error:", err);

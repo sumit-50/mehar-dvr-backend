@@ -26,6 +26,22 @@ app.use(
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
+// Global Request Logger Middleware for real-time Docker / Coolify logs
+app.use((req, res, next) => {
+  const start = Date.now();
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const symbol = res.statusCode >= 500 ? "❌" : res.statusCode >= 400 ? "⚠️" : "✅";
+    console.log(
+      `[API] ${symbol} ${req.method} ${req.originalUrl || req.url} -> Status ${res.statusCode} (${duration}ms) [IP: ${ip}]`
+    );
+  });
+
+  next();
+});
+
 // Root and API index endpoint
 app.get(["/", "/api"], (_req, res) => {
   res.json({
