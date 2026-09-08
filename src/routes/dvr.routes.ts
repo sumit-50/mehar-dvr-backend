@@ -110,10 +110,10 @@ dvrRouter.get("/my-visits", async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const result = await query(
-      `SELECT v.*, l.name as location_name, l.address as location_address, p.full_name as employee_name, p.email as employee_email
+      `SELECT v.*, l.name as location_name, l.address as location_address, p.full_name as employee_name, p.email as employee_email, p.employee_id as employee_code
        FROM visits v
-       JOIN locations l ON v.location_id = l.id
-       JOIN profiles p ON v.employee_id = p.id
+       LEFT JOIN locations l ON v.location_id = l.id
+       LEFT JOIN profiles p ON v.employee_id = p.id
        WHERE v.employee_id = $1
        ORDER BY v.created_at DESC`,
       [authReq.userId]

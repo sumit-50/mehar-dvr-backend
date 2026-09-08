@@ -167,10 +167,10 @@ adminRouter.get("/visits", async (req: Request, res: Response) => {
   try {
     const { employee_id, location_id, from_date, to_date } = req.query;
     let sql = `
-      SELECT v.*, l.name as location_name, l.address as location_address, p.full_name as employee_name, p.email as employee_email
+      SELECT v.*, l.name as location_name, l.address as location_address, p.full_name as employee_name, p.email as employee_email, p.employee_id as employee_code
       FROM visits v
-      JOIN locations l ON v.location_id = l.id
-      JOIN profiles p ON v.employee_id = p.id
+      LEFT JOIN locations l ON v.location_id = l.id
+      LEFT JOIN profiles p ON v.employee_id = p.id
       WHERE 1=1
     `;
     const params: any[] = [];
