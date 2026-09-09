@@ -13,7 +13,7 @@ adminRouter.use(requireAdminGuard);
 adminRouter.get("/employees", async (_req: Request, res: Response) => {
   try {
     const result = await query(
-      "SELECT id, email, full_name, employee_id, phone, role, is_active, created_at FROM profiles ORDER BY created_at DESC"
+      "SELECT id, email, full_name, employee_id, phone, role, avatar_url, is_active, created_at FROM profiles ORDER BY created_at DESC"
     );
     return res.json(result.rows);
   } catch (err: any) {

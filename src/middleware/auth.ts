@@ -5,6 +5,7 @@ import { query } from "../config/db.js";
 export interface AuthenticatedRequest extends Request {
   userId: string;
   userEmail?: string;
+  userEmpId?: string;
   isAdmin: boolean;
   user?: any;
 }
@@ -32,6 +33,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       };
       (req as AuthenticatedRequest).userId = adminUser.id;
       (req as AuthenticatedRequest).userEmail = adminUser.email;
+      (req as AuthenticatedRequest).userEmpId = adminUser.employee_id;
       (req as AuthenticatedRequest).isAdmin = true;
       (req as AuthenticatedRequest).user = adminUser;
       return next();
@@ -54,6 +56,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         };
         (req as AuthenticatedRequest).userId = empUser.id;
         (req as AuthenticatedRequest).userEmail = empUser.email;
+        (req as AuthenticatedRequest).userEmpId = empUser.employee_id;
         (req as AuthenticatedRequest).isAdmin = false;
         (req as AuthenticatedRequest).user = empUser;
         return next();
@@ -95,6 +98,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     (req as AuthenticatedRequest).userId = user.id;
     (req as AuthenticatedRequest).userEmail = user.email;
+    (req as AuthenticatedRequest).userEmpId = user.employee_id || decoded.employee_id;
     (req as AuthenticatedRequest).isAdmin = isAdmin;
     (req as AuthenticatedRequest).user = user;
 

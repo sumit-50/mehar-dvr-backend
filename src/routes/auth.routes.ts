@@ -572,7 +572,7 @@ export function generateEmployeePrefix(fullName: string = ""): string {
 authRouter.get("/users", async (_req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT id, email, full_name, employee_id, phone, role, is_active, created_at 
+      `SELECT id, email, full_name, employee_id, phone, role, avatar_url, is_active, created_at 
        FROM profiles 
        ORDER BY created_at DESC`
     );
@@ -671,8 +671,8 @@ authRouter.get("/session-info", requireAuth, async (req: Request, res: Response)
   const authReq = req as AuthenticatedRequest;
   try {
     const result = await query(
-      "SELECT id, email, full_name, employee_id, phone, role, is_active, created_at FROM profiles WHERE id = $1",
-      [authReq.userId]
+      "SELECT id, email, full_name, employee_id, phone, role, avatar_url, is_active, created_at FROM profiles WHERE id = $1 OR (employee_id IS NOT NULL AND employee_id = UPPER($2)) OR (LOWER(email) = LOWER($3)) LIMIT 1",
+      [authReq.userId, authReq.userEmpId || "", authReq.userEmail || ""]
     );
 
     if (result.rows.length === 0) {
@@ -689,6 +689,7 @@ authRouter.get("/session-info", requireAuth, async (req: Request, res: Response)
       employee_id: row.employee_id || "",
       phone: row.phone || "",
       role: row.role || "employee",
+      avatar_url: row.avatar_url || null,
       status: row.is_active ? "active" : "inactive",
       created_at: row.created_at,
     };
@@ -697,7 +698,7 @@ authRouter.get("/session-info", requireAuth, async (req: Request, res: Response)
       userId: authReq.userId,
       profile,
       isAdmin: authReq.isAdmin || row.role === "admin",
-      avatarUrl: null,
+      avatarUrl: row.avatar_url || null,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to retrieve session info" });
@@ -708,22 +709,27 @@ authRouter.get("/session-info", requireAuth, async (req: Request, res: Response)
 authRouter.patch("/profile", requireAuth, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
-    const { full_name, name, phone, employee_id } = req.body;
+    const { full_name, name, phone, employee_id, avatar_url, photo } = req.body;
     const finalName = full_name || name;
+    const finalAvatar = avatar_url || photo;
 
     const result = await query(
       `UPDATE profiles 
        SET full_name = COALESCE($1, full_name),
            phone = COALESCE($2, phone),
            employee_id = COALESCE($3, employee_id),
+           avatar_url = COALESCE($4, avatar_url),
            updated_at = NOW()
-       WHERE id = $4
-       RETURNING id, email, full_name, employee_id, phone, role, is_active`,
+       WHERE id = $5 OR (employee_id IS NOT NULL AND employee_id = UPPER($6)) OR (LOWER(email) = LOWER($7))
+       RETURNING id, email, full_name, employee_id, phone, role, avatar_url, is_active`,
       [
         finalName ? finalName.trim() : null,
         phone ? phone.trim() : null,
         employee_id ? employee_id.trim().toUpperCase() : null,
+        finalAvatar || null,
         authReq.userId,
+        authReq.userEmpId || "",
+        authReq.userEmail || "",
       ]
     );
 
@@ -742,11 +748,75 @@ authRouter.patch("/profile", requireAuth, async (req: Request, res: Response) =>
         employee_id: row.employee_id,
         phone: row.phone,
         role: row.role,
+        avatar_url: row.avatar_url || null,
         status: row.is_active ? "active" : "inactive",
       },
+      avatarUrl: row.avatar_url || null,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to update profile" });
+  }
+});
+
+/** Update/upload profile photo */
+authRouter.post("/avatar", requireAuth, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
+  try {
+    const { photo, avatar_url } = req.body;
+    const finalPhoto = photo || avatar_url;
+    if (!finalPhoto || typeof finalPhoto !== "string") {
+      return res.status(400).json({ error: "Photo data URL is required." });
+    }
+
+    const result = await query(
+      `UPDATE profiles 
+       SET avatar_url = $1, updated_at = NOW() 
+       WHERE id = $2 OR (employee_id IS NOT NULL AND employee_id = UPPER($3)) OR (LOWER(email) = LOWER($4))
+       RETURNING id, avatar_url`,
+      [finalPhoto, authReq.userId, authReq.userEmpId || "", authReq.userEmail || ""]
+    );
+
+    return res.json({
+      success: true,
+      avatar_url: finalPhoto,
+      url: finalPhoto,
+      profile: result.rows[0] || null,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to update profile photo" });
+  }
+});
+
+/** Remove profile photo */
+authRouter.delete("/avatar", requireAuth, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
+  try {
+    await query(
+      `UPDATE profiles 
+       SET avatar_url = NULL, updated_at = NOW() 
+       WHERE id = $1 OR (employee_id IS NOT NULL AND employee_id = UPPER($2)) OR (LOWER(email) = LOWER($3))`,
+      [authReq.userId, authReq.userEmpId || "", authReq.userEmail || ""]
+    );
+
+    return res.json({ success: true, message: "Profile photo removed successfully" });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to remove profile photo" });
+  }
+});
+
+authRouter.post("/remove-avatar", requireAuth, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
+  try {
+    await query(
+      `UPDATE profiles 
+       SET avatar_url = NULL, updated_at = NOW() 
+       WHERE id = $1 OR (employee_id IS NOT NULL AND employee_id = UPPER($2)) OR (LOWER(email) = LOWER($3))`,
+      [authReq.userId, authReq.userEmpId || "", authReq.userEmail || ""]
+    );
+
+    return res.json({ success: true, message: "Profile photo removed successfully" });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to remove profile photo" });
   }
 });
 
