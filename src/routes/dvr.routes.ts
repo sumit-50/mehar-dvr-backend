@@ -204,13 +204,16 @@ dvrRouter.post("/places/search", async (req: Request, res: Response) => {
 /** Reverse Geocode via Amazon Location Service (backend only) */
 dvrRouter.post("/places/reverse-geocode", async (req: Request, res: Response) => {
   try {
-    const { latitude, longitude } = req.body;
-    if (latitude === undefined || longitude === undefined) {
+    const { latitude, longitude, lat: reqLat, lng: reqLng } = req.body;
+    const finalLat = latitude !== undefined ? Number(latitude) : (reqLat !== undefined ? Number(reqLat) : NaN);
+    const finalLng = longitude !== undefined ? Number(longitude) : (reqLng !== undefined ? Number(reqLng) : NaN);
+
+    if (!Number.isFinite(finalLat) || !Number.isFinite(finalLng)) {
       return res.status(400).json({ error: "Latitude and Longitude are required." });
     }
 
-    const lat = Number(latitude);
-    const lng = Number(longitude);
+    const lat = finalLat;
+    const lng = finalLng;
     const awsApiKey = process.env.AWS_MAP_API_KEY;
     const awsRegion = process.env.AWS_MAP_REGION || "eu-north-1";
 
